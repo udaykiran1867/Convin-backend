@@ -36,12 +36,17 @@ func (c *Cache) Get(accountID string) AccountStats {
 }
 
 // Record folds one completed call into an account's running totals.
+// Record folds one completed call into the cached aggregate.
 func (c *Cache) Record(accountID string, durationSec int) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
 	s, ok := c.m[accountID]
 	if !ok {
 		s = &AccountStats{}
 		c.m[accountID] = s
 	}
+
 	s.CallCount++
 	s.TotalDurationSec += int64(durationSec)
 }

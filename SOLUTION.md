@@ -85,3 +85,27 @@ The targeted test passes:
 ```bash
 go test ./internal/ingest -run TestWaitForInflightFinishesRecordingWork -count=1
 
+## Bug 4: In-memory statistics cache had a data race
+
+### What was broken
+
+The in-memory account statistics cache was accessed concurrently by webhook requests.
+
+`Get()` used an `RLock`, but `Record()` modified the cache map and account counters without acquiring a write lock.
+
+As a result, concurrent webhook ingestion could cause data races and lost updates. The issue was reproduced using a concurrent cache test and Go's race detector. Before the fix, the test reported a data race and could return an incorrect call count.
+
+### Fix
+
+`Cache.Record()` now acquires an exclusive `Lock()` before modifying the map or account statistics and releases it after the update.
+
+This makes updates to `CallCount` and `TotalDurationSec` thread-safe while still allowing concurrent reads through `RLock()`.
+
+A regression test, `TestCacheRecordConcurrent`, was added to exercise concurrent cache updates.
+
+### Verification
+
+The full test suite passes:
+
+```bash
+go test ./... -count=1
