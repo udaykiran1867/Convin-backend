@@ -188,3 +188,40 @@ func TestRecordingIsMarkedProcessed(t *testing.T) {
 
 	t.Fatalf("recording for call %s was not marked processed", callID)
 }
+
+func TestWaitForInflightFinishesRecordingWork(t *testing.T) {
+	srv, st, svc := testutil.NewServerWithService(t)
+	eventID, callID, accountID := testutil.IDs(t, st)
+
+	body := eventJSON(eventID, callID, accountID)
+
+	resp := post(t, srv.URL+"/webhooks/calls", body)
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("got %d, want 200", resp.StatusCode)
+	}
+
+	ctx, cancel := context.WithTimeout(
+		context.Background(),
+		2*time.Second,
+	)
+	defer cancel()
+
+	if err := svc.WaitForInflight(ctx); err != nil {
+		t.Fatalf("WaitForInflight: %v", err)
+	}
+
+	var processed bool
+	if err := st.Pool().QueryRow(
+		context.Background(),
+		`SELECT recording_processed
+		 FROM calls
+		 WHERE call_id = $1`,
+		callID,
+	).Scan(&processed); err != nil {
+		t.Fatalf("read recording_processed: %v", err)
+	}
+
+	if !processed {
+		t.Fatal("recording was not processed before shutdown completed")
+	}
+}

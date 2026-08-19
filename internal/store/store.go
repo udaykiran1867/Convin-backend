@@ -111,6 +111,44 @@ func (s *Store) MarkRecordingProcessed(ctx context.Context, callID string) error
 	return err
 }
 
+// PendingRecording represents a recording that still needs processing.
+type PendingRecording struct {
+	CallID       string
+	RecordingURL string
+}
+
+// PendingRecordings returns recordings that were persisted but not yet processed.
+func (s *Store) PendingRecordings(ctx context.Context) ([]PendingRecording, error) {
+	rows, err := s.pool.Query(ctx,
+		`SELECT call_id, recording_url
+		 FROM calls
+		 WHERE recording_url IS NOT NULL
+		   AND recording_processed = FALSE
+		 ORDER BY updated_at`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var recordings []PendingRecording
+
+	for rows.Next() {
+		var rec PendingRecording
+
+		if err := rows.Scan(&rec.CallID, &rec.RecordingURL); err != nil {
+			return nil, err
+		}
+
+		recordings = append(recordings, rec)
+	}
+
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+
+	return recordings, nil
+}
+
 // IncrementAccountStats folds one completed call into the durable aggregate.
 func (s *Store) IncrementAccountStats(ctx context.Context, accountID string, durationSec int) error {
 	_, err := s.pool.Exec(ctx,

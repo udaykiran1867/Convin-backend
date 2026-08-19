@@ -55,9 +55,20 @@ func main() {
 	<-stop
 
 	log.Info("shutting down")
-	shutdownCtx, cancel := context.WithTimeout(context.Background(), shutdownTimeout)
+
+	shutdownCtx, cancel := context.WithTimeout(
+		context.Background(),
+		shutdownTimeout,
+	)
 	defer cancel()
+
+	// First stop accepting new requests and wait for active HTTP handlers.
 	if err := srv.Shutdown(shutdownCtx); err != nil {
-		log.Error("shutdown", "err", err)
+		log.Error("http shutdown", "err", err)
+	}
+
+	// Then wait for recording jobs started by those requests.
+	if err := svc.WaitForInflight(shutdownCtx); err != nil {
+		log.Error("waiting for in-flight recording work", "err", err)
 	}
 }

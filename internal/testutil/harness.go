@@ -78,3 +78,24 @@ func NewServer(t *testing.T) (*httptest.Server, *store.Store) {
 	t.Cleanup(srv.Close)
 	return srv, s
 }
+
+func NewServerWithService(t *testing.T) (*httptest.Server, *store.Store, *ingest.Service) {
+	t.Helper()
+
+	cfg := config.Load()
+	s := NewStore(t)
+
+	rdb, err := redisclient.New(context.Background(), cfg.RedisAddr)
+	if err != nil {
+		t.Fatalf("connect to redis (is `docker compose up` running?): %v", err)
+	}
+	t.Cleanup(func() { _ = rdb.Close() })
+
+	log := slog.New(slog.NewTextHandler(io.Discard, nil))
+	svc := ingest.New(s, stats.NewCache(), rdb, log)
+
+	srv := httptest.NewServer(httpapi.NewRouter(svc, log))
+	t.Cleanup(srv.Close)
+
+	return srv, s, svc
+}

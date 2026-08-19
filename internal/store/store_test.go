@@ -135,3 +135,48 @@ func TestUpsertCallThenMarkRecordingProcessed(t *testing.T) {
 		t.Fatal("expected recording_processed to be true")
 	}
 }
+func TestPendingRecordings(t *testing.T) {
+	s := testutil.NewStore(t)
+	eventID, callID, accountID := testutil.IDs(t, s)
+	ctx := context.Background()
+
+	evt := store.Event{
+		EventID:      eventID,
+		CallID:       callID,
+		AccountID:    accountID,
+		Status:       "completed",
+		DurationSec:  10,
+		RecordingURL: "https://example.com/test.wav",
+		Payload:      []byte(`{}`),
+	}
+
+	if err := s.UpsertCall(ctx, evt); err != nil {
+		t.Fatalf("UpsertCall: %v", err)
+	}
+
+	pending, err := s.PendingRecordings(ctx)
+	if err != nil {
+		t.Fatalf("PendingRecordings: %v", err)
+	}
+
+	if len(pending) != 1 {
+		t.Fatalf("got %d pending recordings, want 1", len(pending))
+	}
+
+	if pending[0].CallID != callID {
+		t.Fatalf("got call ID %q, want %q", pending[0].CallID, callID)
+	}
+
+	if err := s.MarkRecordingProcessed(ctx, callID); err != nil {
+		t.Fatalf("MarkRecordingProcessed: %v", err)
+	}
+
+	pending, err = s.PendingRecordings(ctx)
+	if err != nil {
+		t.Fatalf("PendingRecordings after processing: %v", err)
+	}
+
+	if len(pending) != 0 {
+		t.Fatalf("got %d pending recordings after processing, want 0", len(pending))
+	}
+}

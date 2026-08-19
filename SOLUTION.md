@@ -53,3 +53,35 @@ The targeted test passes:
 
 ```bash
 go test ./internal/ingest -run TestRecordingIsMarkedProcessed -count=1
+```
+
+## Bug 3: In-flight Recording Work Was Lost During Deployment
+
+### What was broken
+
+Recording processing was started in background goroutines. During deployment, the HTTP server performed a graceful shutdown, but those background goroutines were not tracked.
+
+`http.Server.Shutdown()` waits for active HTTP handlers, but it does not wait for unrelated goroutines. As a result, the process could exit while recording processing was still running, causing in-flight work to disappear.
+
+### Fix
+
+The ingestion service now tracks active recording-processing jobs using a `sync.WaitGroup`.
+
+Each recording job increments the wait group before starting and decrements it when finished. A new `WaitForInflight()` method waits for all active recording jobs to complete or until the shutdown context expires.
+
+During shutdown, the server now:
+
+1. Stops accepting new HTTP requests.
+2. Waits for active HTTP handlers to finish.
+3. Waits for in-flight recording processing to complete.
+4. Exits the process.
+
+A regression test, `TestWaitForInflightFinishesRecordingWork`, verifies that shutdown waits for recording processing and that the recording is marked processed before the service finishes shutting down.
+
+### Verification
+
+The targeted test passes:
+
+```bash
+go test ./internal/ingest -run TestWaitForInflightFinishesRecordingWork -count=1
+
